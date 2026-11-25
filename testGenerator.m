@@ -1,20 +1,26 @@
 function results = testGenerator(nPerSpecies, seedOffset)
-%TESTGENERATOR Closed-loop test: does the analyzer recognize synthetic calls?
+%TESTGENERATOR Closed-loop test: does the classifier recognize synthetic calls?
 %   testGenerator          writes 10 synthetic songs per species to
-%                          'Synthetic Calls/', classifies each one with
-%                          birdCallAnalyzer, and prints a confusion matrix.
+%                          'Synthetic Calls/', classifies each one with the
+%                          trained model from bird_classifier, and prints a
+%                          confusion matrix.
 %   testGenerator(n)       n songs per species.
 %   testGenerator(n, k)    shift every seed by k to get a fresh set of songs.
 %   results = testGenerator(...)  also returns one struct per song
-%                          (file, species, predicted, confidence).
+%                          (file, species, predicted).
+%
+%   Each file is classified exactly the way bird_classifier.m does it:
+%   cut into 3 s chunks, skip quiet chunks, run getFeatures and
+%   predictSpecies on each chunk, take the majority vote.
 %
 %   If the real dataset is in 'Bird Call Dataset/wavfiles', it also draws a
 %   real recording next to a synthetic one for each species, which makes a
 %   good slide for the presentation.
 %
-%   Requires birdModel.mat (run trainBirdClassifier first).
+%   Requires birdModel.mat (saved by bird_classifier). The dataset itself
+%   is not needed.
 %
-%   See also birdCallGenerator, birdCallAnalyzer.
+%   See also birdCallGenerator, bird_classifier, predictSpecies.
 
     if nargin < 1 || isempty(nPerSpecies), nPerSpecies = 10; end
     if nargin < 2 || isempty(seedOffset),  seedOffset  = 0;  end
@@ -22,43 +28,43 @@ function results = testGenerator(nPerSpecies, seedOffset)
     if isempty(rootDir), rootDir = pwd; end
     outDir  = fullfile(rootDir, 'Synthetic Calls');
 
+    modelFile = fullfile(rootDir, 'birdModel.mat');
+    if ~exist(modelFile, 'file')
+        error('testGenerator:noModel', 'birdModel.mat not found. Run bird_classifier first.');
+    end
+    S = load(modelFile, 'model');
+    model   = S.model;
+    classes = cellstr(model.classes);
+    K = numel(classes);
+
     % ---- 1. Generate -----------------------------------------------------
     [~, ~, info] = birdCallGenerator('all', 'Count', nPerSpecies, 'OutDir', outDir, ...
                                      'Seed', seedOffset);
 
-    % ---- 2. Classify each file with the real analyzer ---------------------
-    S = load(fullfile(rootDir, 'birdModel.mat'), 'model');
-    classes = cellstr(S.model.classes);
-    K = numel(classes);
+    % ---- 2. Classify each file ---------------------------------------------
     N = numel(info.files);
-    truth = zeros(N, 1);  pred = zeros(N, 1);  conf = zeros(N, 1);
-    results = struct('file', info.files, 'species', info.species, ...
-                     'predicted', '', 'confidence', 0);
-    sp = '';  p = [];          % filled in by evalc below (it hides the analyzer's printout)
+    truth = zeros(N, 1);  pred = zeros(N, 1);
+    results = struct('file', info.files, 'species', info.species, 'predicted', '');
     fprintf('Classifying %d synthetic calls', N);
     for i = 1:N
-        file = info.files{i};                                    %#ok<NASGU> used in evalc
-        txt  = evalc('[sp, p] = birdCallAnalyzer(file, false);'); %#ok<NASGU>
+        guess = classifyFile(model, classes, info.files{i});
         truth(i) = find(strcmp(classes, info.species{i}));
-        pred(i)  = find(strcmp(classes, char(sp)));
-        conf(i)  = p(truth(i));
-        results(i).predicted  = char(sp);
-        results(i).confidence = p(pred(i));
+        pred(i)  = find(strcmp(classes, guess));
+        results(i).predicted = guess;
         if mod(i, 5) == 0, fprintf('.'); end
     end
     fprintf('\n');
 
     % ---- 3. Report -------------------------------------------------------
     C = accumarray([truth pred], 1, [K K]);
-    codes = {'BEWR', 'NOCA', 'AMRO', 'SOSP', 'NOMO'};
-    fprintf('\nSynthetic calls recognized by the analyzer: %d of %d (%.0f%%)\n', ...
+    codes = cellfun(@speciesCode, classes, 'UniformOutput', false);
+    fprintf('\nSynthetic calls recognized by the classifier: %d of %d (%.0f%%)\n', ...
             trace(C), N, 100*trace(C)/N);
     fprintf('\nConfusion matrix (rows = species generated, columns = species predicted):\n');
-    fprintf('%-22s', '');  fprintf('%7s', codes{:});  fprintf('   correct   avg P(true)\n');
+    fprintf('%-22s', '');  fprintf('%7s', codes{:});  fprintf('   correct\n');
     for c = 1:K
-        m = truth == c;
         fprintf('%-22s', classes{c});  fprintf('%7d', C(c, :));
-        fprintf('   %5.0f%%     %.2f\n', 100*C(c,c)/max(1, sum(C(c,:))), mean(conf(m)));
+        fprintf('   %5.0f%%\n', 100*C(c,c)/max(1, sum(C(c,:))));
     end
 
     % ---- 4. Optional figure: real vs synthetic ----------------------------
@@ -69,10 +75,40 @@ function results = testGenerator(nPerSpecies, seedOffset)
 end
 
 %% ------------------------------------------------------------------------
+function name = classifyFile(model, classes, file)
+% Same steps as section 6 of bird_classifier.m: cut into 3 s chunks, skip
+% chunks quieter than 10% of the loudest, classify each chunk, majority vote.
+    [audio, fs] = audioread(file);
+    audio = mean(audio, 2);
+    chunkLen  = round(3 * fs);
+    numChunks = max(1, floor(numel(audio) / chunkLen));
+    feats = zeros(numChunks, numel(model.mu));
+    peak  = zeros(numChunks, 1);
+    for c = 1:numChunks
+        chunk = audio((c-1)*chunkLen + 1 : min(c*chunkLen, numel(audio)));
+        feats(c, :) = getFeatures(chunk, fs);
+        peak(c) = max(abs(chunk));
+    end
+    votes = predictSpecies(model, feats(peak >= 0.1 * max(peak), :));
+    [~, idx] = ismember(cellstr(votes), classes);
+    name = classes{mode(idx)};
+end
+
+function code = speciesCode(name)
+    switch name
+        case 'American Robin',       code = 'AMRO';
+        case 'Bewick''s Wren',       code = 'BEWR';
+        case 'Northern Cardinal',    code = 'NOCA';
+        case 'Northern Mockingbird', code = 'NOMO';
+        case 'Song Sparrow',         code = 'SOSP';
+        otherwise,                   code = name(1:min(4, end));
+    end
+end
+
 function plotRealVsSynthetic(rootDir, wavDir, classes, info)
 % Top row: one real clip per species. Bottom row: one synthetic clip.
     meta = readtable(fullfile(rootDir, 'Bird Call Dataset', 'bird_songs_metadata.csv'), ...
-                     'TextType', 'string', 'Delimiter', ',');
+                     'TextType', 'string');
     figure('Name', 'Real vs synthetic bird calls', 'Position', [50 100 1500 520]);
     K = numel(classes);
     for c = 1:K

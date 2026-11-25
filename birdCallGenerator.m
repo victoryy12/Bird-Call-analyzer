@@ -20,6 +20,10 @@ function [y, fs, info] = birdCallGenerator(species, varargin)
 %                 typical for that species in the training recordings
 %                 (wren 11, cardinal 13, robin 15, sparrow 17,
 %                 mockingbird 25). Inf = no background at all.
+%     'Dynamics'  how much softer than full volume a note can be, in dB.
+%                 Default: typical for that species (wren 40, robin 25,
+%                 cardinal 20, sparrow 10, mockingbird 10). 0 = all notes
+%                 equally loud.
 %     'Reverb'    amount of echo, 0 (none) to 1 (default 0.5)
 %     'OutFile'   also write the song to this WAV file
 %     'Play'      play it through the speakers (default false)
@@ -44,8 +48,9 @@ function [y, fs, info] = birdCallGenerator(species, varargin)
 %     attack and decay, fast sinusoidal FM + AM (100-300 Hz) turns a tone
 %     into a buzz, and band-limited noise makes harsh calls. Each species
 %     is a recipe that arranges these notes in time. Finally the song gets
-%     the things every field recording has: slight pitch wobble, echoes
-%     (reverb by FFT convolution), and background hiss with faint ticks.
+%     the things every field recording has: slight pitch wobble, notes of
+%     uneven loudness, echoes (reverb by FFT convolution), and background
+%     hiss with faint ticks.
 %     Without them the analyzer hears pure tones in silence and calls
 %     almost everything a mockingbird.
 %
@@ -63,27 +68,29 @@ function [y, fs, info] = birdCallGenerator(species, varargin)
         return;
     end
 
-    [name, code, typicalSnr] = resolveSpecies(species);
+    [name, code, typicalSnr, typicalDyn] = resolveSpecies(species);
     snr = opt.SNR;
     if isempty(snr), snr = typicalSnr; end
+    dyn = opt.Dynamics;
+    if isempty(dyn), dyn = typicalDyn; end
     seed = opt.Seed;
     if isempty(seed), seed = randi(1e6); end
     setSeed(seed);
 
     n = round(opt.Duration * fs);
     switch code
-        case 'NOCA', y = cardinalSong(n, fs);
-        case 'AMRO', y = robinSong(n, fs);
-        case 'SOSP', y = songSparrowSong(n, fs);
-        case 'BEWR', y = wrenSong(n, fs);
-        case 'NOMO', y = mockingbirdSong(n, fs);
+        case 'NOCA', y = cardinalSong(n, fs, dyn);
+        case 'AMRO', y = robinSong(n, fs, dyn);
+        case 'SOSP', y = songSparrowSong(n, fs, dyn);
+        case 'BEWR', y = wrenSong(n, fs, dyn);
+        case 'NOMO', y = mockingbirdSong(n, fs, dyn);
     end
     y = addReverb(y, fs, opt.Reverb);
     y = addBackground(y, fs, snr);
     y = 0.9 * y / max(abs(y));
 
     info = struct('species', name, 'code', code, 'fs', fs, 'seed', seed, ...
-                  'snr', snr, 'file', opt.OutFile);
+                  'snr', snr, 'dynamics', dyn, 'file', opt.OutFile);
     if ~isempty(opt.OutFile)
         audiowrite(opt.OutFile, y, fs);
     end
@@ -103,7 +110,7 @@ end
 %  uniform random number, so every call varies a little, like real birds.
 %  ========================================================================
 
-function y = cardinalSong(n, fs)
+function y = cardinalSong(n, fs, dyn)
 % Loud, clear slurred whistles: a phrase of long slurs ("cheer cheer" going
 % down, or "wheet wheet" going up), then a fast run of short downslurs
 % ("chew-chew-chew"). Almost a pure tone; energy spread over 1.5-4.4 kHz.
@@ -125,7 +132,7 @@ function y = cardinalSong(n, fs)
             else
                 x = note(fs, len, fA, fB, 'exp', harm, 0.15, 0.05);
             end
-            y = place(y, u(0.85, 1) * x, t, fs);
+            y = addNote(y, u(0.85, 1) * x, t, fs, dyn);
             t = t + len + gap;
         end
         % Phrase B: fast, short downslurs
@@ -134,14 +141,14 @@ function y = cardinalSong(n, fs)
         f1 = u(3500, 4000);   f2 = u(1600, 2000);
         for k = 1:randi([4 9])
             x = note(fs, len, f1, f2, 'exp', harm, 0.1, 0.2);
-            y = place(y, u(0.8, 1) * x, t, fs);
+            y = addNote(y, u(0.8, 1) * x, t, fs, dyn);
             t = t + len + gap;
         end
         t = t + u(0.3, 0.7);
     end
 end
 
-function y = robinSong(n, fs)
+function y = robinSong(n, fs, dyn)
 % "Cheerily, cheer-up, cheerio": short phrases of 2-4 warbled syllables,
 % each rising and falling within about 1.7-3.7 kHz, then a pause. The
 % syllables in a phrase run together without breaks: one continuous
@@ -166,12 +173,12 @@ function y = robinSong(n, fs)
             ac = [ac; 0.55 + 0.45 * env(m, 0.3, 0.35)];        %#ok<AGROW>
         end
         x = tone(fc, fs, harm) .* ac .* env(numel(fc), 0.05, 0.1);
-        y = place(y, u(0.8, 1) * x, t, fs);
+        y = addNote(y, u(0.8, 1) * x, t, fs, dyn);
         t = t + numel(fc)/fs + u(0.25, 0.5);
     end
 end
 
-function y = songSparrowSong(n, fs)
+function y = songSparrowSong(n, fs, dyn)
 % Classic pattern: 2-4 clear introductory notes ("sweet sweet sweet"),
 % a buzz, a rapid trill, then a jumble of short, varied notes. Brighter
 % and busier than the whistlers; energy mostly 3-6 kHz.
@@ -184,20 +191,20 @@ function y = songSparrowSong(n, fs)
         for k = 1:randi([2 4])
             len = u(0.07, 0.11);
             x = note(fs, len, 1.1*f, 0.9*f, 'lin', harm, 0.1, 0.3);
-            y = place(y, x, t, fs);
+            y = addNote(y, x, t, fs, dyn);
             t = t + len + u(0.08, 0.14);
         end
         % 2) Buzz
         len = u(0.25, 0.45);
         x = buzz(fs, len, u(4100, 5000), u(800, 1400), u(120, 220), harm);
-        y = place(y, 0.7 * x, t, fs);
+        y = addNote(y, 0.7 * x, t, fs, dyn);
         t = t + len + u(0.04, 0.08);
         % 3) Trill: fast, steep downsweeps
         rate = u(14, 20);
         fA = u(5500, 6800);  fB = u(2800, 3600);
         for k = 1:randi([6 12])
             x = note(fs, 0.6/rate, fA, fB, 'exp', harm, 0.1, 0.4);
-            y = place(y, 0.8 * x, t, fs);
+            y = addNote(y, 0.8 * x, t, fs, dyn);
             t = t + 1/rate;
         end
         % 4) Terminal jumble
@@ -205,14 +212,14 @@ function y = songSparrowSong(n, fs)
             len = u(0.03, 0.08);
             f1 = u(2300, 6400);  f2 = f1 * u(0.6, 1.4);
             x = note(fs, len, f1, f2, 'lin', harm, 0.1, 0.4);
-            y = place(y, u(0.6, 1) * x, t, fs);
+            y = addNote(y, u(0.6, 1) * x, t, fs, dyn);
             t = t + len + u(0.02, 0.06);
         end
         t = t + u(0.8, 1.5);                  % pause before the next song
     end
 end
 
-function y = wrenSong(n, fs)
+function y = wrenSong(n, fs, dyn)
 % Bewick's Wren: thin and high. One or two buzzy or whistled intro notes,
 % then two trills with different note shapes and speeds. Lives in the same
 % 2.6-5.5 kHz range as the Song Sparrow, but is built from longer trills.
@@ -228,7 +235,7 @@ function y = wrenSong(n, fs)
             else
                 x = note(fs, len, u(5000, 5800), u(3300, 3900), 'exp', harm, 0.1, 0.3);
             end
-            y = place(y, 0.8 * x, t, fs);
+            y = addNote(y, 0.8 * x, t, fs, dyn);
             t = t + len + u(0.06, 0.12);
         end
         % Trill 1: fast upsweeps
@@ -236,7 +243,7 @@ function y = wrenSong(n, fs)
         fA = u(2900, 3400);  fB = u(4500, 5300);
         for k = 1:round(u(0.5, 0.9) * rate)
             x = note(fs, 0.6/rate, fA, fB, 'exp', harm, 0.2, 0.3);
-            y = place(y, x, t, fs);
+            y = addNote(y, x, t, fs, dyn);
             t = t + 1/rate;
         end
         t = t + u(0.03, 0.08);
@@ -245,14 +252,14 @@ function y = wrenSong(n, fs)
         fA = u(4000, 4800);  fB = u(2600, 3000);
         for k = 1:round(u(0.4, 0.8) * rate)
             x = note(fs, 0.6/rate, fA, fB, 'exp', harm, 0.1, 0.35);
-            y = place(y, 0.9 * x, t, fs);
+            y = addNote(y, 0.9 * x, t, fs, dyn);
             t = t + 1/rate;
         end
         t = t + u(0.6, 1.2);
     end
 end
 
-function y = mockingbirdSong(n, fs)
+function y = mockingbirdSong(n, fs, dyn)
 % The mimic: a run of different phrase types, each repeated 3-5 times
 % before switching. Phrases are borrowed sounds:
 % cardinal-like slurs, robin-like warbles, quick trills, two-note
@@ -263,7 +270,7 @@ function y = mockingbirdSong(n, fs)
     while t < dur
         x = mockPhrase(fs, harm);
         for r = 1:randi([3 5])
-            y = place(y, u(0.8, 1) * x, t, fs);
+            y = addNote(y, u(0.8, 1) * x, t, fs, dyn);
             t = t + numel(x)/fs + u(0.06, 0.1);
         end
         t = t + u(0.15, 0.3);
@@ -396,6 +403,14 @@ function x = bandNoise(n, fs, fLo, fHi)
     x = x / (max(abs(x)) + eps);
 end
 
+function y = addNote(y, x, t0, fs, dynDb)
+% Mix a song note into y at a random loudness between full and dynDb dB
+% softer. Real songs mix loud and soft notes, and the bird turns its head
+% and shifts distance while singing. Without this, every note is equally
+% loud and the clip's peak-to-average level is far below real recordings.
+    y = place(y, x * 10^(-dynDb * rand / 20), t0, fs);
+end
+
 function y = place(y, x, t0, fs)
 % Mix note x into y starting at t0 seconds; anything past the end is cut.
     i0 = round(t0 * fs) + 1;
@@ -455,20 +470,23 @@ end
 %  Options, batch mode, plotting
 %  ========================================================================
 
-function [name, code, snr] = resolveSpecies(s)
-% Name, code, and typical recording SNR (dB) for each species. The SNRs
-% were calibrated against the training recordings: wren and sparrow clips
-% are the noisiest (spectral flatness ~0.015), mockingbird clips the
-% cleanest (~0.005; they sing loudly from exposed perches).
+function [name, code, snr, dyn] = resolveSpecies(s)
+% Name, code, typical recording SNR (dB), and note-to-note loudness range
+% (dB) for each species, calibrated against the training recordings. Wren
+% and sparrow clips are the noisiest, mockingbird clips the cleanest (they
+% sing loudly from exposed perches). The loudness ranges were set so each
+% species' synthetic songs match its real recordings on how loud the
+% singing is compared with the clip's peak (the classifier's first MFCC).
     names = {'Bewick''s Wren', 'Northern Cardinal', 'American Robin', ...
              'Song Sparrow', 'Northern Mockingbird'};
     codes = {'BEWR', 'NOCA', 'AMRO', 'SOSP', 'NOMO'};
     words = {'wren', 'cardinal', 'robin', 'sparrow', 'mockingbird'};
     snrs  = [11 13 15 17 25];
+    dyns  = [40 20 25 10 10];
     s = lower(strtrim(char(s)));
     for k = 1:numel(names)
         if strcmpi(s, names{k}) || strcmpi(s, codes{k}) || ~isempty(strfind(s, words{k}))
-            name = names{k};  code = codes{k};  snr = snrs(k);
+            name = names{k};  code = codes{k};  snr = snrs(k);  dyn = dyns(k);
             return;
         end
     end
@@ -477,7 +495,7 @@ function [name, code, snr] = resolveSpecies(s)
 end
 
 function opt = parseOptions(args, nOut)
-    opt = struct('Seed', [], 'Duration', 3, 'SNR', [], 'Reverb', 0.5, 'OutFile', '', ...
+    opt = struct('Seed', [], 'Duration', 3, 'SNR', [], 'Dynamics', [], 'Reverb', 0.5, 'OutFile', '', ...
                  'Play', false, 'Plot', nOut == 0, 'Count', 3, ...
                  'OutDir', 'Synthetic Calls');
     if mod(numel(args), 2) ~= 0
@@ -511,7 +529,8 @@ function info = generateAll(opt, fs)
         for k = 1:opt.Count
             file = fullfile(opt.OutDir, sprintf('synthetic_%s_%02d.wav', codes{c}, k));
             [~, ~, one] = birdCallGenerator(codes{c}, 'Seed', base + 1000*c + k, ...
-                'Duration', opt.Duration, 'SNR', opt.SNR, 'Reverb', opt.Reverb, ...
+                'Duration', opt.Duration, 'SNR', opt.SNR, 'Dynamics', opt.Dynamics, ...
+                'Reverb', opt.Reverb, ...
                 'OutFile', file, 'Plot', false);
             files{end+1, 1}   = file;         %#ok<AGROW>
             species{end+1, 1} = one.species;  %#ok<AGROW>
