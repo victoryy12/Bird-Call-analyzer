@@ -101,7 +101,7 @@ The calibration also has to keep up with the classifier. When the classifier was
 
 ### The classifier on real recordings
 
-`bird_classifier` prints its test accuracy on its fixed split (`rng(42)`): **___%** ← *Victor: fill in from your run.*
+`bird_classifier` prints its test accuracy on its fixed split (`rng(42)`): **72%**
 
 We also ran the same pipeline on 10 other random recording-level splits, and it averaged 72% (between 66% and 75%). Here's how each species did, totaled over those 10 splits:
 
