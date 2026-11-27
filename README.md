@@ -12,8 +12,8 @@ It covers five species: American Robin, Bewick's Wren, Northern Cardinal, Northe
 | --- | --- |
 | Victor | Classifier: feature extraction, neural network, training and classification (`bird_classifier.m`, `getFeatures.m`, `trainModel.m`, `predictSpecies.m`, `changeSampleRate.m`, `melFilters.m`) |
 | Jack | Generator and closed-loop test (`birdCallGenerator.m`, `testGenerator.m`), README |
-| Caleb | _add your part_ |
-| Zack | _add your part_ |
+| Caleb |Paper revision, project revision, results overseer |
+| Zac | Code revision, drafting research paper, data analysis |
 
 ## What you need
 
@@ -101,7 +101,7 @@ The calibration also has to keep up with the classifier. When the classifier was
 
 ### The classifier on real recordings
 
-`bird_classifier` prints its test accuracy on its fixed split (`rng(42)`): **72%**
+`bird_classifier` prints its test accuracy on its fixed split (`rng(42)`): **72%** 
 
 We also ran the same pipeline on 10 other random recording-level splits, and it averaged 72% (between 66% and 75%). Here's how each species did, totaled over those 10 splits:
 
