@@ -119,7 +119,6 @@ The mistakes line up with the biology. Robins and mockingbirds get mixed up beca
 
 We ran `testGenerator(40, 50000)`, which makes 40 songs per species from seeds we never used while tuning. The trained model in `birdModel.mat` classified 181 of the 200 songs (90%) as the right species: mockingbird 98%, sparrow 98%, robin 90%, cardinal 85%, and wren 82%. That's higher than on real recordings, which makes sense, since the synthetic songs are textbook examples of each species.
 
-> Note: these numbers came from running the generator with the classifier's own functions and saved model in GNU Octave. MATLAB's random number generator makes different songs from the same seeds, so `testGenerator(40, 50000)` in MATLAB will give close but not identical results. Once someone runs it in MATLAB, put those numbers here and delete this note.
 
 ## Files
 
