@@ -12,8 +12,8 @@ It covers five species: American Robin, Bewick's Wren, Northern Cardinal, Northe
 | --- | --- |
 | Victor | Classifier: feature extraction, neural network, training and classification (`bird_classifier.m`, `getFeatures.m`, `trainModel.m`, `predictSpecies.m`, `changeSampleRate.m`, `melFilters.m`) |
 | Jack | Generator and closed-loop test (`birdCallGenerator.m`, `testGenerator.m`), README |
-| Caleb | _add your part_ |
-| Zack | _add your part_ |
+| Caleb |Paper revision, project revision, results overseer |
+| Zac | Code revision, drafting research paper, data analysis |
 
 ## What you need
 
