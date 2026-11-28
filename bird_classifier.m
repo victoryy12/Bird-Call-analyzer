@@ -11,6 +11,9 @@ dataFolder = "Bird Call Dataset";
 clips = readtable(fullfile(dataFolder, "bird_songs_metadata.csv"), "TextType", "string");
 clips.path = fullfile(dataFolder, "wavfiles", clips.filename);
 clips = clips(isfile(clips.path), :);  
+if ~any(isfile(clips.path))
+    error("Download the dataset into ""Bird Call Dataset/wavfiles"" first (see README).")
+end
 
 species = categorical(clips.name);
 summary(species)
