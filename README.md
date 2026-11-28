@@ -19,7 +19,7 @@ It covers five species: American Robin, Bewick's Wren, Northern Cardinal, Northe
 
 You'll need MATLAB R2019b or newer. It all runs on base MATLAB, so no toolboxes.
 
-The generator and `testGenerator` work as soon as you clone, because the trained model (`birdModel.mat`) is already in the repo. The dataset (about 2.4 GB) is only needed for `bird_classifier`, since that's what it trains on. Download it before you run that script. Right now, if the WAV files are missing, the script has nothing to train on and it overwrites `features_cache.mat` with an empty cache.
+The generator and `testGenerator` work as soon as you clone, because the trained model (`birdModel.mat`) is already in the repo. The dataset (about 2.4 GB) is only needed for `bird_classifier`, since that's what it trains on. Download it before you run that script. Right now, without the WAV files, it stops with a message telling you to download them.
 
 ## Setup
 
